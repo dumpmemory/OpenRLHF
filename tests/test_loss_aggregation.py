@@ -5,22 +5,24 @@ from pathlib import Path
 
 import torch
 
+_TEST_PACKAGE = "_openrlhf_loss_test"
+
 
 def _load_loss_module():
     root = Path(__file__).resolve().parents[1]
     models_dir = root / "openrlhf" / "models"
 
-    pkg = types.ModuleType("openrlhf.models")
+    pkg = types.ModuleType(_TEST_PACKAGE)
     pkg.__path__ = [str(models_dir)]
-    sys.modules["openrlhf.models"] = pkg
+    sys.modules[_TEST_PACKAGE] = pkg
 
     for name in ("utils", "loss"):
-        spec = importlib.util.spec_from_file_location(f"openrlhf.models.{name}", models_dir / f"{name}.py")
+        spec = importlib.util.spec_from_file_location(f"{_TEST_PACKAGE}.{name}", models_dir / f"{name}.py")
         module = importlib.util.module_from_spec(spec)
-        sys.modules[f"openrlhf.models.{name}"] = module
+        sys.modules[f"{_TEST_PACKAGE}.{name}"] = module
         spec.loader.exec_module(module)
 
-    return sys.modules["openrlhf.models.loss"]
+    return sys.modules[f"{_TEST_PACKAGE}.loss"]
 
 
 def _load_loss_utils_module():
@@ -143,3 +145,14 @@ def test_policy_kl_metric_uses_policy_ratio_when_vllm_correction_is_enabled():
 
     assert torch.allclose(ppo_kl, (old_log_probs - log_probs).mean())
     assert torch.allclose(vllm_kl, (rollout_log_probs - old_log_probs).mean())
+
+
+def test_policy_kl_metric_is_not_clamped():
+    log_probs = torch.tensor([[100.0]])
+    old_log_probs = torch.zeros_like(log_probs)
+    advantages = torch.ones_like(log_probs)
+    mask = torch.ones_like(log_probs)
+
+    _, _, ppo_kl, _ = PolicyLoss()(log_probs, old_log_probs, advantages, action_mask=mask)
+
+    assert torch.allclose(ppo_kl, (old_log_probs - log_probs).mean())

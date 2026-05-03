@@ -101,6 +101,17 @@ class NaiveReplayBuffer(ABC):
         # karmarkar_karp with num_mbs=0).
         expected_num_steps = args.rollout.batch_size * args.rollout.n_samples_per_prompt // args.train.batch_size
         num_steps = min(expected_num_steps, len(sample_lengths) // local_train_batch_size)
+        num_steps = torch.tensor(num_steps, dtype=torch.int, device=torch.cuda.current_device())
+        dist.all_reduce(num_steps, op=dist.ReduceOp.MIN, group=dp_group)
+        num_steps = num_steps.item()
+        if num_steps == 0:
+            self.dynamic_indices = []
+            self.sample_batch_size = 1
+            self.dynamic_sample_loss_scale = []
+            self.dynamic_batch_num_tokens = []
+            self.dynamic_global_batch_size = []
+            self.dynamic_optimizer_step = []
+            return
 
         # split by train_batch_size, sync num_microbatches across dp
         num_microbatches = []

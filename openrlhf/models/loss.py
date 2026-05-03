@@ -154,16 +154,17 @@ class PolicyLoss(nn.Module):
         batch_num_tokens: Optional[float] = None,
         global_batch_size: Optional[float] = None,
     ) -> torch.Tensor:
+        raw_policy_log_ratio = log_probs - old_log_probs
         if self.policy_loss_type == "ppo":
-            policy_log_ratio = (log_probs - old_log_probs).clamp(min=-20.0, max=20.0)
+            policy_log_ratio = raw_policy_log_ratio.clamp(min=-20.0, max=20.0)
             ratio = policy_log_ratio.exp()
         elif self.policy_loss_type == "gspo":
             # GSPO: https://arxiv.org/pdf/2507.18071
             if self.enable_vllm_is_correction:
                 log_ratio = log_probs - rollout_log_probs
             else:
-                log_ratio = log_probs - old_log_probs
-            policy_log_ratio = (log_probs - old_log_probs).clamp(min=-20.0, max=20.0)
+                log_ratio = raw_policy_log_ratio
+            policy_log_ratio = raw_policy_log_ratio.clamp(min=-20.0, max=20.0)
             ratio = (log_ratio * action_mask).sum(dim=-1) / action_mask.sum(dim=-1).clamp(min=1)
             ratio = ratio.exp().unsqueeze(-1) * action_mask
         else:
@@ -217,7 +218,7 @@ class PolicyLoss(nn.Module):
             global_batch_size=global_batch_size,
         )
         clip_ratio = masked_mean(torch.lt(surr2, surr1).float(), action_mask, dim=None)
-        ppo_kl = masked_mean(-policy_log_ratio.detach(), action_mask, dim=None)
+        ppo_kl = masked_mean(-raw_policy_log_ratio.detach(), action_mask, dim=None)
         return loss, clip_ratio, ppo_kl, vllm_kl
 
 
